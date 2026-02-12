@@ -43,6 +43,7 @@ async function main() {
       const passThrough = new PassThrough();
 
       const ffmpegArgs = [
+        "-t", "480",
         "-i", process.env.ORIGINAL_URL,
         "-vf", "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2",
         "-c:v", "libx264",

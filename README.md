@@ -1,6 +1,6 @@
 # video-transcoder-job
 
-The job transcoding a provided original video to some videos:
+A job transcoding a provided original video into some optimized videos:
 * An optimized video for OGP (H.264 codec and 720p)
 * An optimized video for on-demand streaming (H.264 codec and 1080p)
 
