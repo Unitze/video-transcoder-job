@@ -1,0 +1,28 @@
+{
+  "name": "video-transcoder-job",
+  "private": true,
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc"
+  },
+  "keywords": [],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Unitze/video-transcoder-job.git"
+  },
+  "readme": "https://github.com/Unitze/video-transcoder-job#readme",
+  "bugs": {
+    "url": "https://github.com/Unitze/video-transcoder-job/issues"
+  },
+  "author": "mtripg6666tdr",
+  "license": "MIT",
+  "devDependencies": {
+    "@tsconfig/node22": "^22.0.5",
+    "@types/node": "^25.2.3",
+    "cross-env": "^10.1.0",
+    "typescript": "^5.9.3"
+  }
+}
