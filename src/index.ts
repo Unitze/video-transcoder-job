@@ -62,8 +62,8 @@ async function main() {
         "-i", process.env.ORIGINAL_URL,
         "-vf", "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2,fps=30",
         "-c:v", "libx264",
-        "-preset", "faster",
-        "-crf", "30",
+        "-preset", "medium",
+        "-crf", "33",
         "-movflags", "+faststart",
         ...audioOptions,
         "-f", "mp4",
@@ -142,7 +142,7 @@ async function baseSpawnFFmpeg<T extends keyof BaseSpawnFFmpegTypeMap>(binary: s
       "-reconnect", "1",
       "-reconnect_at_eof", "1",
       "-reconnect_streamed", "1",
-      "-reconnect_delay_max", "5",
+      "-reconnect_delay_max", "10",
       ...args
     ], { stdio: ["ignore", "pipe", "pipe"] });
 
