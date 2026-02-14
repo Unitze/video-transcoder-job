@@ -16,11 +16,14 @@ async function main() {
     "-print_format", "json",
     "-show_format",
     "-show_streams",
-  ]) as string;
+  ], "string") as string;
 
   // ffprobeの結果を出力する
   await waitForStreamFinish(
-    Readable.from(rawFFprobeResult).pipe(createOutStream(process.env.PROBE_DEST_URL))
+    Readable.from(rawFFprobeResult).pipe(createOutStream(process.env.PROBE_DEST_URL, {
+      contentType: "application/json; charset=UTF-8",
+      contentLength: Buffer.byteLength(rawFFprobeResult),
+    }))
   );
 
   const probeResult = JSON.parse(rawFFprobeResult) as FFprobeOutput;
@@ -40,25 +43,24 @@ async function main() {
     if (hasH264Video && is720pOrLower && durationSec <= 8 * 60 && is50MBOrLower) {
       console.log("The original video is already H.264 and 720p or lower and duration is 8 minutes or less and size is 50MB or less, skipping OGP video generation.");
     } else {
-      const passThrough = new PassThrough();
-
-      const ffmpegArgs = [
+      using file = await spawnFFmpeg([
         "-t", "480",
         "-i", process.env.ORIGINAL_URL,
         "-vf", "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2",
         "-c:v", "libx264",
         "-preset", "veryfast",
         "-crf", "28",
-        "-movflags", "frag_keyframe+empty_moov",
+        "-movflags", "+faststart",
         ...audioOptions,
         "-f", "mp4",
-        "pipe:1",
-      ];
+      ], "file");
 
-      await Promise.all([
-        spawnFFmpeg(ffmpegArgs, passThrough),
-        waitForStreamFinish(passThrough.pipe(createOutStream(process.env.OGP_DEST_URL))),
-      ]);
+      const outStream = createOutStream(process.env.OGP_DEST_URL, {
+        contentType: "video/mp4; codecs=avc1.42E01E, mp4a.40.2",
+        contentLength: await file.getSize(),
+      });
+
+      await waitForStreamFinish(file.getReader().pipe(outStream));
     }
   }
 
@@ -67,24 +69,23 @@ async function main() {
     if (hasH264Video && is1080pOrLower) {
       console.log("The original video is already H.264 and 1080p or lower, skipping main video generation.");
     } else {
-      const passThrough = new PassThrough();
-
-      const ffmpegArgs = [
+      using file = await spawnFFmpeg([
         "-i", process.env.ORIGINAL_URL,
         "-vf", "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2",
         "-c:v", "libx264",
-        "-preset", "veryfast",
+        "-preset", "fast",
         "-crf", "23",
-        "-movflags", "frag_keyframe+empty_moov",
+        "-movflags", "+faststart",
         ...audioOptions,
         "-f", "mp4",
-        "pipe:1",
-      ];
+      ], "file");
 
-      await Promise.all([
-        spawnFFmpeg(ffmpegArgs, passThrough),
-        waitForStreamFinish(passThrough.pipe(createOutStream(process.env.MAIN_DEST_URL))),
-      ]);
+      const outStream = createOutStream(process.env.MAIN_DEST_URL, {
+        contentType: "video/mp4; codecs=avc1.64002A, mp4a.40.2",
+        contentLength: await file.getSize(),
+      });
+
+      await waitForStreamFinish(file.getReader().pipe(outStream));
     }
   }
 
@@ -94,43 +95,69 @@ async function main() {
   console.log("Done!");
 }
 
-async function baseSpawnFFmpeg(binary: string, args: string[], outStream?: Writable): Promise<void | string> {
+interface FSFileArtifact {
+  type: "fs-file";
+  filename: string;
+  getReader: () => Readable;
+  getSize: () => Promise<number>;
+  [Symbol.dispose]: () => void;
+}
+
+interface BaseSpawnFFmpegTypeMap {
+  string: string;
+  file: FSFileArtifact;
+}
+
+async function baseSpawnFFmpeg<T extends keyof BaseSpawnFFmpegTypeMap>(binary: string, args: string[], out: T): Promise<BaseSpawnFFmpegTypeMap[T]> {
   return new Promise((resolve, reject) => {
+    const filename = `${crypto.randomUUID().replaceAll("-", "")}.tmp`;
+
+    if (out === "file") {
+      args.push(filename);
+    }
+
     const ffmpeg = spawn(binary, args, { stdio: ["ignore", "pipe", "pipe"] });
 
     ffmpeg.stderr.pipe(process.stderr);
 
-    if (outStream) {
-      ffmpeg.stdout.pipe(outStream);
+    if (out === "file") {
       ffmpeg.on("close", (code) => {
         if (code === 0) {
-          resolve();
+          resolve({
+            type: "fs-file",
+            filename,
+            getReader: () => fs.createReadStream(filename),
+            getSize: async () => (await fs.promises.stat(filename)).size,
+            [Symbol.dispose]: () => fs.unlinkSync(filename),
+          } as unknown as BaseSpawnFFmpegTypeMap[T]);
         } else {
           reject(new Error(`FFmpeg exited with code ${code}`));
         }
       });
-    } else {
+    } else if (out === "string") {
       const bufs: Buffer[] = [];
       ffmpeg.stdout.on("data", (chunk) => {
         bufs.push(chunk);
       });
       ffmpeg.stdout.on("end", () => {
         const output = Buffer.concat(bufs).toString();
-        resolve(output);
+        resolve(output as unknown as BaseSpawnFFmpegTypeMap[T]);
       });
       ffmpeg.on("close", (code) => {
         if (code !== 0) {
           reject(new Error(`FFmpeg exited with code ${code}`));
         }
       });
+    } else {
+      reject(new Error(`Invalid output type: ${out}`));
     }
   });
 }
 
-const spawnFFmpeg = baseSpawnFFmpeg.bind(null, "ffmpeg");
-const spawnFFprobe = baseSpawnFFmpeg.bind(null, "ffprobe");
+const spawnFFmpeg = <T extends keyof BaseSpawnFFmpegTypeMap>(args: string[], out: T): Promise<BaseSpawnFFmpegTypeMap[T]> => baseSpawnFFmpeg("ffmpeg", args, out);
+const spawnFFprobe = <T extends keyof BaseSpawnFFmpegTypeMap>(args: string[], out: T): Promise<BaseSpawnFFmpegTypeMap[T]> => baseSpawnFFmpeg("ffprobe", args, out);
 
-function createOutStream(dest: string): Writable {
+function createOutStream(dest: string, options: { contentType: string, contentLength: number }): Writable {
   if (dest.startsWith("http://") || dest.startsWith("https://")) {
     // HTTP PUTで送るストリームを作る
     const pass = new PassThrough();
@@ -138,6 +165,10 @@ function createOutStream(dest: string): Writable {
     fetchForExecution(dest, {
       method: "PUT",
       body: pass,
+      headers: {
+        "content-length": options.contentLength.toString(),
+        "content-type": options.contentType,
+      },
       // @ts-ignore: Nodeのfetchでストリームを送る場合に必要なおまじない
       duplex: "half",
     }).then((res) => {
