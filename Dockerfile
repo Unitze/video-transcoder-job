@@ -6,12 +6,16 @@ RUN npm ci
 COPY --link src ./src
 RUN npm run build
 
+FROM mwader/static-ffmpeg:8.0 AS ffmpeg
+
 FROM node:22-bookworm-slim AS runner
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt update -y && \
     apt dist-upgrade -y && \
-    apt install -y ffmpeg ca-certificates
+    apt install -y ca-certificates
 WORKDIR /app
+COPY --link --from=ffmpeg /ffmpeg /usr/local/bin
+COPY --link --from=ffmpeg /ffprobe /usr/local/bin
 COPY --link package.json package-lock.json* ./
 # when some packages are needed at runtime in future, uncomment the following line to install them
 # RUN npm install --production
