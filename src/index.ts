@@ -24,12 +24,10 @@ async function main() {
 
   // ffprobeの結果を出力する
   console.log("Uploading ffprobe result...");
-  await waitForStreamFinish(
-    Readable.from(rawFFprobeResult).pipe(createOutStream(process.env.PROBE_DEST_URL, {
-      contentType: "application/json; charset=UTF-8",
-      contentLength: Buffer.byteLength(rawFFprobeResult),
-    }))
-  );
+  await Readable.from(rawFFprobeResult).pipe(createOutStream(process.env.PROBE_DEST_URL, {
+    contentType: "application/json; charset=UTF-8",
+    contentLength: Buffer.byteLength(rawFFprobeResult),
+  })).waitForFinish();
 
   console.log("Analyzing ffprobe result...");
   const probeResult = JSON.parse(rawFFprobeResult) as FFprobeOutput;
@@ -67,7 +65,9 @@ async function main() {
         contentLength: await file.getSize(),
       });
 
-      await waitForStreamFinish(file.getReader().pipe(outStream));
+      await file.getReader().pipe(outStream).waitForFinish();
+
+      global.gc?.();
     }
   }
 
@@ -94,12 +94,9 @@ async function main() {
         contentLength: await file.getSize(),
       });
 
-      await waitForStreamFinish(file.getReader().pipe(outStream));
+      await file.getReader().pipe(outStream).waitForFinish();
     }
   }
-
-  console.log("Transcoding job completed, waiting for all uploads to finish...");
-  await ensureAllFetchesDone();
 
   console.log("All uploads completed, reporting completion...");
   await fetch(process.env.REPORT_URL, { method: "GET" }).then(res => res.arrayBuffer()).catch(noop);
@@ -124,7 +121,7 @@ interface BaseSpawnFFmpegTypeMap {
 
 async function baseSpawnFFmpeg<T extends keyof BaseSpawnFFmpegTypeMap>(binary: string, args: string[], out: T): Promise<BaseSpawnFFmpegTypeMap[T]> {
   return new Promise((resolve, reject) => {
-    const filename = `${crypto.randomUUID().replaceAll("-", "")}.tmp`;
+    const filename = `/tmp/${crypto.randomUUID().replaceAll("-", "")}.tmp`;
 
     if (out === "file") {
       args.push(filename);
@@ -171,12 +168,12 @@ async function baseSpawnFFmpeg<T extends keyof BaseSpawnFFmpegTypeMap>(binary: s
 const spawnFFmpeg = <T extends keyof BaseSpawnFFmpegTypeMap>(args: string[], out: T): Promise<BaseSpawnFFmpegTypeMap[T]> => baseSpawnFFmpeg("ffmpeg", args, out);
 const spawnFFprobe = <T extends keyof BaseSpawnFFmpegTypeMap>(args: string[], out: T): Promise<BaseSpawnFFmpegTypeMap[T]> => baseSpawnFFmpeg("ffprobe", args, out);
 
-function createOutStream(dest: string, options: { contentType: string, contentLength: number }): Writable {
+function createOutStream(dest: string, options: { contentType: string, contentLength: number }): Writable & { waitForFinish: () => Promise<void> } {
   if (dest.startsWith("http://") || dest.startsWith("https://")) {
     // HTTP PUTで送るストリームを作る
     const pass = new PassThrough();
 
-    fetchForExecution(dest, {
+    const fetchPromise = fetch(dest, {
       method: "PUT",
       body: pass,
       headers: {
@@ -197,9 +194,11 @@ function createOutStream(dest: string, options: { contentType: string, contentLe
       process.exit(1);
     });
 
-    return pass;
+    return Object.assign(pass, { waitForFinish: () => fetchPromise });
   } else {
-    return fs.createWriteStream(dest);
+    const stream = fs.createWriteStream(dest);
+
+    return Object.assign(stream, { waitForFinish: async () => waitForStreamFinish(stream) });
   }
 }
 
@@ -208,17 +207,6 @@ function waitForStreamFinish(stream: Writable): Promise<void> {
     stream.on("finish", resolve);
     stream.on("error", reject);
   });
-}
-
-const fetchPromises: Promise<unknown>[] = [];
-function fetchForExecution(url: string, init: RequestInit): Promise<Response> {
-  const promise = fetch(url, init);
-  fetchPromises.push(promise);
-  return promise;
-}
-
-function ensureAllFetchesDone(): Promise<void> {
-  return Promise.allSettled(fetchPromises).then(() => {});
 }
 
 main();

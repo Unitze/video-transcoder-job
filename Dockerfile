@@ -17,4 +17,4 @@ COPY --link package.json package-lock.json* ./
 # RUN npm install --production
 COPY --link --from=builder /app/dist/index.js /app/index.js
 
-CMD ["node", "index.js"]
+CMD ["node", "index.js", "--expise-gc"]
