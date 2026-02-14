@@ -7,8 +7,12 @@ import { PassThrough, Readable, Writable } from "stream";
 const noop = () => {};
 
 async function main() {
+  const startTime = Date.now();
+  console.log("Starting video transcoding job...");
+  console.log("Original video URL:", process.env.ORIGINAL_URL);
 
   // ffprobeで情報を取る
+  console.log("Probing video information with ffprobe...");
   const rawFFprobeResult = await spawnFFprobe([
     "-i",
     process.env.ORIGINAL_URL,
@@ -19,6 +23,7 @@ async function main() {
   ], "string") as string;
 
   // ffprobeの結果を出力する
+  console.log("Uploading ffprobe result...");
   await waitForStreamFinish(
     Readable.from(rawFFprobeResult).pipe(createOutStream(process.env.PROBE_DEST_URL, {
       contentType: "application/json; charset=UTF-8",
@@ -26,8 +31,8 @@ async function main() {
     }))
   );
 
+  console.log("Analyzing ffprobe result...");
   const probeResult = JSON.parse(rawFFprobeResult) as FFprobeOutput;
-
   const videoStream = probeResult.streams.find((s) => s.codec_type === "video");
   const audioStream = probeResult.streams.find((s) => s.codec_type === "audio");
   const hasH264Video = process.env.FILENAME.endsWith(".mp4") && videoStream?.codec_name === "h264";
@@ -43,7 +48,9 @@ async function main() {
     if (hasH264Video && is720pOrLower && durationSec <= 8 * 60 && is50MBOrLower) {
       console.log("The original video is already H.264 and 720p or lower and duration is 8 minutes or less and size is 50MB or less, skipping OGP video generation.");
     } else {
+      console.log("Generating OGP video...");
       using file = await spawnFFmpeg([
+        "-hide_banner",
         "-t", "480",
         "-i", process.env.ORIGINAL_URL,
         "-vf", "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2",
@@ -69,7 +76,9 @@ async function main() {
     if (hasH264Video && is1080pOrLower) {
       console.log("The original video is already H.264 and 1080p or lower, skipping main video generation.");
     } else {
+      console.log("Generating main video...");
       using file = await spawnFFmpeg([
+        "-hide_banner",
         "-i", process.env.ORIGINAL_URL,
         "-vf", "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2",
         "-c:v", "libx264",
@@ -89,10 +98,15 @@ async function main() {
     }
   }
 
+  console.log("Transcoding job completed, waiting for all uploads to finish...");
   await ensureAllFetchesDone();
+
+  console.log("All uploads completed, reporting completion...");
   await fetch(process.env.REPORT_URL, { method: "GET" }).then(res => res.arrayBuffer()).catch(noop);
 
-  console.log("Done!");
+  const endTime = Date.now();
+  const jobDurationSec = (endTime - startTime) / 1000;
+  console.log(`All done! Total job duration: ${jobDurationSec.toFixed(2)} seconds (${(jobDurationSec / durationSec * 100).toFixed(2)}% speed).`);
 }
 
 interface FSFileArtifact {
