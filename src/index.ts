@@ -14,9 +14,9 @@ async function main() {
   // ffprobeで情報を取る
   console.log("Probing video information with ffprobe...");
   const rawFFprobeResult = (await spawnFFprobe([
+    "-hide_banner",
     "-i",
     process.env.ORIGINAL_URL,
-    "-hide_banner",
     "-print_format", "json",
     "-show_format",
     "-show_streams",
@@ -56,12 +56,14 @@ async function main() {
       console.log("Generating OGP video...");
       using file = await spawnFFmpeg([
         "-hide_banner",
+        "-loglevel", "warning",
+        "-stats",
         "-t", "480",
         "-i", process.env.ORIGINAL_URL,
-        "-vf", "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2",
+        "-vf", "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2,fps=30",
         "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-crf", "28",
+        "-preset", "faster",
+        "-crf", "30",
         "-movflags", "+faststart",
         ...audioOptions,
         "-f", "mp4",
@@ -86,8 +88,10 @@ async function main() {
       console.log("Generating main video...");
       using file = await spawnFFmpeg([
         "-hide_banner",
+        "-loglevel", "warning",
+        "-stats",
         "-i", process.env.ORIGINAL_URL,
-        "-vf", "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2",
+        "-vf", "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2,fps=30",
         "-c:v", "libx264",
         "-preset", "fast",
         "-crf", "23",
