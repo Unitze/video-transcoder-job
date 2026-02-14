@@ -13,14 +13,14 @@ async function main() {
 
   // ffprobeで情報を取る
   console.log("Probing video information with ffprobe...");
-  const rawFFprobeResult = await spawnFFprobe([
+  const rawFFprobeResult = (await spawnFFprobe([
     "-i",
     process.env.ORIGINAL_URL,
     "-hide_banner",
     "-print_format", "json",
     "-show_format",
     "-show_streams",
-  ], "string") as string;
+  ], "string") as string).replace(process.env.ORIGINAL_URL, "");
 
   // ffprobeの結果を出力する
   console.log("Uploading ffprobe result...");
@@ -40,6 +40,13 @@ async function main() {
   const durationSec = parseFloat(probeResult.format.duration);
   const is50MBOrLower = parseFloat(probeResult.format.size) <= 50 * 1024 * 1024;
   const audioOptions = hasAACAudio ? ["-c:a", "copy"] : ["-c:a", "aac", "-b:a", "128k"];
+
+  if (!videoStream) {
+    console.log("No video stream found in the input file.");
+    console.log("All jobs completed, reporting completion...");
+    await fetch(process.env.REPORT_URL, { method: "GET" }).then(res => res.arrayBuffer()).catch(noop);
+    return;
+  }
 
   if (process.env.OGP_DEST_URL) {
     // OGP用動画を作る
@@ -98,7 +105,7 @@ async function main() {
     }
   }
 
-  console.log("All uploads completed, reporting completion...");
+  console.log("All jobs completed, reporting completion...");
   await fetch(process.env.REPORT_URL, { method: "GET" }).then(res => res.arrayBuffer()).catch(noop);
 
   const endTime = Date.now();
