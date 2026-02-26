@@ -148,11 +148,13 @@ async function baseSpawnFFmpeg<T extends keyof BaseSpawnFFmpegTypeMap>(binary: s
       "-reconnect_at_eof", "1",
       "-reconnect_streamed", "1",
       "-reconnect_delay_max", "10",
-      "-thread_queue_size", "4096",
-      "-probesize", "50M",
-      "-analyzeduration", "50M",
-      "-threads", cpuCount.toString(),
-      "-buffer_size", "100M",
+      ...(binary === "ffmpeg" ? [
+        "-thread_queue_size", "4096",
+        "-probesize", "50M",
+        "-analyzeduration", "50M",
+        "-threads", cpuCount.toString(),
+        "-buffer_size", "100M",
+      ]: []),
       ...args
     ], { stdio: ["ignore", "pipe", "pipe"] });
 
