@@ -7,10 +7,11 @@ import { PassThrough, Readable, Writable } from "stream";
 
 const noop = () => {};
 
+const cpuCount = os.cpus().length;
+
 async function main() {
   const startTime = Date.now();
   console.log("Starting video transcoding job...");
-  const cpuCount = os.cpus().length;
   console.log(`Allocated CPUs: ${cpuCount}`);
   console.log("Original video URL:", process.env.ORIGINAL_URL);
 
@@ -19,9 +20,6 @@ async function main() {
   const rawFFprobeResult = (await spawnFFprobe([
     "-hide_banner",
     "-threads", cpuCount.toString(),
-    "-thread_queue_size", "4096",
-    "-buffer_size", "100M",
-    "-max_reload", "10",
     "-i",
     process.env.ORIGINAL_URL,
     "-print_format", "json",
@@ -150,6 +148,11 @@ async function baseSpawnFFmpeg<T extends keyof BaseSpawnFFmpegTypeMap>(binary: s
       "-reconnect_at_eof", "1",
       "-reconnect_streamed", "1",
       "-reconnect_delay_max", "10",
+      "-thread_queue_size", "4096",
+      "-probesize", "50M",
+      "-analyzeduration", "50M",
+      "-threads", cpuCount.toString(),
+      "-buffer_size", "100M",
       ...args
     ], { stdio: ["ignore", "pipe", "pipe"] });
 
