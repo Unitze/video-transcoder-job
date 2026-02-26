@@ -5,6 +5,8 @@ import fs from "fs";
 import os from "os";
 import { PassThrough, Readable, Writable } from "stream";
 
+import candyget from "candyget";
+
 const noop = () => {};
 
 const cpuCount = os.cpus().length;
@@ -53,6 +55,15 @@ async function main() {
     return;
   }
 
+  const originalVideoRes = await candyget.get(process.env.ORIGINAL_URL, "stream");
+  if (originalVideoRes.statusCode < 200 || originalVideoRes.statusCode >= 300) {
+    console.error(`Failed to fetch original video: ${originalVideoRes.statusCode}`);
+    process.exit(1);
+  }
+
+  const tempOriginalFilename = createTempFilename();
+  await originalVideoRes.body.pipe(createOutStream(tempOriginalFilename)).waitForFinish();
+
   if (process.env.OGP_DEST_URL) {
     // OGP用動画を作る
     if (hasH264Video && is720pOrLower && durationSec <= 8 * 60 && is50MBOrLower) {
@@ -64,7 +75,7 @@ async function main() {
         "-loglevel", "warning",
         "-stats",
         "-t", "480",
-        "-i", process.env.ORIGINAL_URL,
+        "-i", tempOriginalFilename,
         "-vf", "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2,fps=30",
         "-c:v", "libx264",
         "-preset", "faster",
@@ -95,7 +106,7 @@ async function main() {
         "-hide_banner",
         "-loglevel", "warning",
         "-stats",
-        "-i", process.env.ORIGINAL_URL,
+        "-i", tempOriginalFilename,
         "-vf", "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2,fps=30",
         "-c:v", "libx264",
         "-preset", "faster",
@@ -137,21 +148,21 @@ interface BaseSpawnFFmpegTypeMap {
 
 async function baseSpawnFFmpeg<T extends keyof BaseSpawnFFmpegTypeMap>(binary: string, args: string[], out: T): Promise<BaseSpawnFFmpegTypeMap[T]> {
   return new Promise((resolve, reject) => {
-    const filename = `/tmp/${crypto.randomUUID().replaceAll("-", "")}.tmp`;
+    const filename = createTempFilename();
 
     if (out === "file") {
       args.push(filename);
     }
 
     const ffmpeg = spawn(binary, [
-      "-reconnect", "1",
-      "-reconnect_at_eof", "1",
-      "-reconnect_streamed", "1",
-      "-reconnect_delay_max", "10",
+      // "-reconnect", "1",
+      // "-reconnect_at_eof", "1",
+      // "-reconnect_streamed", "1",
+      // "-reconnect_delay_max", "10",
       ...(binary === "ffmpeg" ? [
-        "-thread_queue_size", "4096",
-        "-probesize", "50M",
-        "-analyzeduration", "50M",
+        // "-thread_queue_size", "4096",
+        // "-probesize", "50M",
+        // "-analyzeduration", "50M",
         "-threads", cpuCount.toString(),
       ]: []),
       ...args
@@ -196,8 +207,12 @@ async function baseSpawnFFmpeg<T extends keyof BaseSpawnFFmpegTypeMap>(binary: s
 const spawnFFmpeg = <T extends keyof BaseSpawnFFmpegTypeMap>(args: string[], out: T): Promise<BaseSpawnFFmpegTypeMap[T]> => baseSpawnFFmpeg("ffmpeg", args, out);
 const spawnFFprobe = <T extends keyof BaseSpawnFFmpegTypeMap>(args: string[], out: T): Promise<BaseSpawnFFmpegTypeMap[T]> => baseSpawnFFmpeg("ffprobe", args, out);
 
-function createOutStream(dest: string, options: { contentType: string, contentLength: number }): Writable & { waitForFinish: () => Promise<void> } {
+function createOutStream(dest: string, options?: { contentType: string, contentLength: number }): Writable & { waitForFinish: () => Promise<void> } {
   if (dest.startsWith("http://") || dest.startsWith("https://")) {
+    if (!options) {
+      throw new Error("Options with contentType and contentLength are required for HTTP output");
+    }
+
     // HTTP PUTで送るストリームを作る
     const pass = new PassThrough();
 
@@ -235,6 +250,10 @@ function waitForStreamFinish(stream: Writable): Promise<void> {
     stream.on("finish", resolve);
     stream.on("error", reject);
   });
+}
+
+function createTempFilename() {
+  return `/tmp/${crypto.randomUUID().replaceAll("-", "")}.tmp`;
 }
 
 main();

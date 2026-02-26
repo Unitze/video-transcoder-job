@@ -17,8 +17,7 @@ WORKDIR /app
 COPY --link --from=ffmpeg /ffmpeg /usr/local/bin/
 COPY --link --from=ffmpeg /ffprobe /usr/local/bin/
 COPY --link package.json package-lock.json* ./
-# when some packages are needed at runtime in future, uncomment the following line to install them
-# RUN npm install --production
+RUN npm install --production
 COPY --link --from=builder /app/dist/index.js /app/index.js
 
 CMD ["node", "index.js", "--expose-gc"]
