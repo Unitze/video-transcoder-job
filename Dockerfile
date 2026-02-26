@@ -14,11 +14,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
     apt dist-upgrade -y && \
     apt install -y ca-certificates
 WORKDIR /app
-COPY --link --from=ffmpeg /ffmpeg /usr/local/bin
-COPY --link --from=ffmpeg /ffprobe /usr/local/bin
+COPY --link --from=ffmpeg /ffmpeg /usr/local/bin/
+COPY --link --from=ffmpeg /ffprobe /usr/local/bin/
 COPY --link package.json package-lock.json* ./
 # when some packages are needed at runtime in future, uncomment the following line to install them
 # RUN npm install --production
 COPY --link --from=builder /app/dist/index.js /app/index.js
 
-CMD ["node", "index.js", "--expise-gc"]
+CMD ["node", "index.js", "--expose-gc"]
