@@ -2,6 +2,7 @@ import type { FFprobeOutput } from "./types/ffprobe";
 
 import { spawn } from "child_process";
 import fs from "fs";
+import os from "os";
 import { PassThrough, Readable, Writable } from "stream";
 
 const noop = () => {};
@@ -9,12 +10,18 @@ const noop = () => {};
 async function main() {
   const startTime = Date.now();
   console.log("Starting video transcoding job...");
+  const cpuCount = os.cpus().length;
+  console.log(`Allocated CPUs: ${cpuCount}`);
   console.log("Original video URL:", process.env.ORIGINAL_URL);
 
   // ffprobeで情報を取る
   console.log("Probing video information with ffprobe...");
   const rawFFprobeResult = (await spawnFFprobe([
     "-hide_banner",
+    "-threads", cpuCount.toString(),
+    "-thread_queue_size", "4096",
+    "-buffer_size", "100M",
+    "-max_reload", "10",
     "-i",
     process.env.ORIGINAL_URL,
     "-print_format", "json",
@@ -62,7 +69,7 @@ async function main() {
         "-i", process.env.ORIGINAL_URL,
         "-vf", "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2,fps=30",
         "-c:v", "libx264",
-        "-preset", "medium",
+        "-preset", "faster",
         "-crf", "33",
         "-movflags", "+faststart",
         ...audioOptions,
@@ -93,7 +100,7 @@ async function main() {
         "-i", process.env.ORIGINAL_URL,
         "-vf", "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2,fps=30",
         "-c:v", "libx264",
-        "-preset", "fast",
+        "-preset", "faster",
         "-crf", "23",
         "-movflags", "+faststart",
         ...audioOptions,
